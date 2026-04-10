@@ -1,0 +1,34 @@
+# Virtual environment — never commit this
+talash_env/
+
+# Environment variables — NEVER commit API keys
+.env
+
+# Database file — too large, regenerates automatically
+*.db
+*.sqlite
+*.sqlite3
+
+# Uploaded CVs — not source code
+cvs/
+
+# Exported files — generated output
+outputs/
+
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+
+# OS generated files
+.DS_Store
+.DS_Store?
+Thumbs.db
+desktop.ini
+
+# VS Code settings (optional — remove this block if you want to share VS Code config with teammates)
+.vscode/
+
+# Streamlit cache
+.streamlit/
