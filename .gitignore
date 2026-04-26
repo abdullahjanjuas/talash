@@ -32,3 +32,5 @@ desktop.ini
 
 # Streamlit cache
 .streamlit/
+
+*.pdf

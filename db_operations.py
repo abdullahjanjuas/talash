@@ -2,13 +2,43 @@
 # It takes the Python dict from llama and stores it across multiple tables.
 
 import json
+from datetime import datetime
 from database import SessionLocal  
 from models import (                 # importing all tables
     Candidate, Education, Experience,
-    Publication, Skill, Patent, Book, Project
+    Publication, Skill, Patent, Book, Project, AnalysisCache
 )
 
+def store_analysis_cache(candidate_id: int, module: str, result: dict):
+    db = SessionLocal()
+    try:
+        # ADD THIS BLOCK RIGHT HERE
+        existing = db.query(AnalysisCache).filter(
+            AnalysisCache.candidate_id == candidate_id,
+            AnalysisCache.module == module
+        ).first()
 
+        if existing:
+            # UPDATE existing record
+            existing.result_json = json.dumps(result)
+            existing.computed_at = str(datetime.now())
+        else:
+            # INSERT new record
+            db.add(AnalysisCache(
+                candidate_id=candidate_id,
+                module=module,
+                result_json=json.dumps(result),
+                computed_at=str(datetime.now())
+            ))
+
+        db.commit()
+
+    except:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+        
 def store_candidate(extracted_data: dict, cv_filename: str) -> int:
     """
     Insert a complete extracted CV into the database.
@@ -43,15 +73,37 @@ def store_candidate(extracted_data: dict, cv_filename: str) -> int:
 
         # Insert education records
         # extracted_data["education"] is a list: one item per degree
+        # Insert education records
         for edu in extracted_data.get("education", []):
-            if not edu:  # skip if item is None or empty dict
+            if not edu:
                 continue
+            
+            # Safely parse cgpa — some LLMs return strings like "3.5/4.0"
+            raw_cgpa = edu.get("cgpa")
+            parsed_cgpa = None
+            if raw_cgpa is not None:
+                try:
+                    parsed_cgpa = float(str(raw_cgpa).split("/")[0])
+                except:
+                    parsed_cgpa = None
+
+            raw_pct = edu.get("percentage")
+            parsed_pct = None
+            if raw_pct is not None:
+                try:
+                    parsed_pct = float(str(raw_pct).replace("%", "").strip())
+                except:
+                    parsed_pct = None
+
             db.add(Education(
                 candidate_id=cid,
                 level=edu.get("level"),
                 degree=edu.get("degree"),
                 institution=edu.get("institution"),
-                cgpa=edu.get("cgpa"),           # might be None — that's fine
+                cgpa=parsed_cgpa,
+                percentage=parsed_pct,
+                board=edu.get("board"),
+                specialization=edu.get("specialization"),
                 start_year=str(edu.get("start_year", "")),
                 end_year=str(edu.get("end_year", ""))
             ))

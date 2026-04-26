@@ -44,6 +44,8 @@ SCHEMA:
       "institution": "",
       "cgpa": null,
       "percentage": null,
+      "board": "",
+      "specialization": "",
       "start_year": "",
       "end_year": ""
     }

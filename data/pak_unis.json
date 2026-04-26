@@ -1,0 +1,52 @@
+{
+  "National University of Sciences and Technology": {
+    "aliases": ["NUST", "National University of Sciences & Technology"],
+    "qs_rank": 353,
+    "overall_score": 0.78
+  },
+  "Lahore University of Management Sciences": {
+    "aliases": ["LUMS"],
+    "qs_rank": 540,
+    "overall_score": 0.75
+  },
+  "National University of Computer and Emerging Sciences": {
+    "aliases": ["FAST", "FAST NUCES", "NUCES"],
+    "qs_rank": 650,
+    "overall_score": 0.72
+  },
+  "Institute of Business Administration Karachi": {
+    "aliases": ["IBA"],
+    "qs_rank": 700,
+    "overall_score": 0.70
+  },
+  "Ghulam Ishaq Khan Institute": {
+    "aliases": ["GIKI"],
+    "qs_rank": 720,
+    "overall_score": 0.73
+  },
+  "Quaid-i-Azam University": {
+    "aliases": ["QAU"],
+    "qs_rank": 315,
+    "overall_score": 0.80
+  },
+  "COMSATS University Islamabad": {
+    "aliases": ["COMSATS", "CIIT"],
+    "qs_rank": 800,
+    "overall_score": 0.65
+  },
+  "University of Engineering and Technology Lahore": {
+    "aliases": ["UET"],
+    "qs_rank": 900,
+    "overall_score": 0.60
+  },
+  "University of Punjab": {
+    "aliases": ["PU", "Punjab University"],
+    "qs_rank": 1000,
+    "overall_score": 0.62
+  },
+  "NED University of Engineering and Technology": {
+    "aliases": ["NED"],
+    "qs_rank": 950,
+    "overall_score": 0.64
+  }
+}

@@ -39,6 +39,10 @@ class Education(Base):
     cgpa = Column(Float, nullable=True)          # Float because 3.85 is not an integer
     start_year = Column(String, nullable=True)   # String not Integer — some CVs write "2018-2019"
     end_year = Column(String, nullable=True)
+    # SSC/HSSC Results
+    percentage = Column(Float, nullable=True)
+    board = Column(String, nullable=True)
+    specialization = Column(String, nullable=True)
 
 
 class Experience(Base):
