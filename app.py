@@ -12,9 +12,12 @@ from parser import parse_cv
 from llm_extractor import extract_cv_data
 from db_operations import store_candidate, get_all_candidates_summary, get_candidate_detail,store_analysis_cache
 from education_analyzer import analyze_education
-from experience_analyzer import analyze_experience          # ← CHANGE 1: new import
+from experience_analyzer import analyze_experience
+from conference_analyzer import analyze_conference_papers
 from models import AnalysisCache
 from database import SessionLocal
+# ADD this line after: import pandas as pd
+import plotly.express as px
 # Page confguration
 st.set_page_config(
     page_title="TALASH",
@@ -103,11 +106,17 @@ if page == "Upload CV":
                         store_analysis_cache(candidate_id, "education_profile", edu_analysis)
                     st.success("Education Profile Analysis Completed!")
 
-                    # ── Experience Profile Analysis ──           ← CHANGE 2A: new block
+                    # ── Experience Profile Analysis ──
                     with st.spinner("Analyzing professional experience..."):
                         exp_analysis = analyze_experience(candidate_id)
                         store_analysis_cache(candidate_id, "experience_profile", exp_analysis)
                     st.success("Experience Profile Analysis Completed!")
+
+                    # ── Conference Paper Analysis ──
+                    with st.spinner("Analyzing conference publications..."):
+                        conf_analysis = analyze_conference_papers(candidate_id)
+                        store_analysis_cache(candidate_id, "conference_profile", conf_analysis)
+                        st.success("Conference Paper Analysis Completed!")
 
                 except Exception as e:
                     st.error(f"Database error: {str(e)}")
@@ -198,6 +207,40 @@ elif page == "All Candidates":
         col3.metric("With CGPA",
                     sum(1 for c in candidates if c["CGPA"] not in ["—", None]))
 
+        # ── Charts ──
+        st.divider()
+        st.subheader("Charts")
+
+        chart_col1, chart_col2 = st.columns(2)
+
+        with chart_col1:
+            st.markdown("**Publications per Candidate**")
+            pub_df = pd.DataFrame({
+                "Candidate": [c["Name"] or f"#{c['ID']}" for c in candidates],
+                "Publications": [c["Publications"] for c in candidates]
+            })
+            fig_pub = px.bar(pub_df, x="Candidate", y="Publications", text="Publications",
+                             color_discrete_sequence=["#4C8BF5"])
+            fig_pub.update_layout(margin=dict(t=20, b=40), height=300, xaxis_title="", yaxis_title="Count")
+            fig_pub.update_traces(textposition="outside")
+            st.plotly_chart(fig_pub, use_container_width=True)
+
+        with chart_col2:
+            st.markdown("**CGPA Distribution**")
+            cgpa_values = [c["CGPA"] for c in candidates if c["CGPA"] not in ["—", None]]
+            if cgpa_values:
+                cgpa_df = pd.DataFrame({
+                    "Candidate": [c["Name"] or f"#{c['ID']}" for c in candidates if c["CGPA"] not in ["—", None]],
+                    "CGPA": cgpa_values
+                })
+                fig_cgpa = px.bar(cgpa_df, x="Candidate", y="CGPA", text="CGPA",
+                                  color_discrete_sequence=["#34A853"], range_y=[0, 4.5])
+                fig_cgpa.update_layout(margin=dict(t=20, b=40), height=300, xaxis_title="", yaxis_title="CGPA")
+                fig_cgpa.update_traces(textposition="outside", texttemplate="%{text:.2f}")
+                st.plotly_chart(fig_cgpa, use_container_width=True)
+            else:
+                st.info("No CGPA data available to chart.")
+
 
 # PAGE 3: CANDIDATE DETAIL
 # Shows complete info for one selected candidate
@@ -229,10 +272,10 @@ elif page == "Candidate Detail":
             col2.markdown(f"**Address:** {c.address or '—'}")
             col2.markdown(f"**CV File:** {c.cv_filename or '—'}")
 
-            # ← CHANGE 2B: tab count expanded from 7 to 8
-            tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs(
+            # Tabs:
+            tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs(
                 ["Education", "Experience", "Projects", "Publications",
-                 "Skills", "Patents & Books", "Educational Analysis", "Experience Analysis"]
+                 "Skills", "Patents & Books", "Educational Analysis", "Experience Analysis", "Conference Analysis"]
             )
 
             with tab1:
@@ -330,15 +373,26 @@ elif page == "Candidate Detail":
 
                 if analysis:
                     res = json.loads(analysis.result_json)
-
                     col1, col2, col3 = st.columns(3)
-
                     col1.metric("University Score", round(res["avg_university_score"], 2))
-                    col2.metric("Academic Score", round(res["avg_academic_score"], 2) if res["avg_academic_score"] else "—")
+                    col2.metric("Academic Score",
+                                round(res["avg_academic_score"], 2) if res["avg_academic_score"] else "—")
                     col3.metric("UG / PG / PhD", f"{res['ug_count']} / {res['pg_count']} / {res['phd_count']}")
 
-                    st.divider()
+                    # Score comparison chart
+                    scores = {
+                        "University Score": res["avg_university_score"] or 0,
+                        "Academic Score": res["avg_academic_score"] or 0,
+                    }
+                    score_df = pd.DataFrame({"Metric": list(scores.keys()), "Score": list(scores.values())})
+                    fig_edu = px.bar(score_df, x="Metric", y="Score", text="Score",
+                                     color="Metric", color_discrete_sequence=["#4C8BF5", "#FBBC04"],
+                                     range_y=[0, 10])
+                    fig_edu.update_layout(showlegend=False, margin=dict(t=20, b=20), height=280)
+                    fig_edu.update_traces(texttemplate="%{text:.2f}", textposition="outside")
+                    st.plotly_chart(fig_edu, use_container_width=True)
 
+                    st.divider()
                     st.write("📈 Progression:", res["progression"])
                     st.write("⏳ Gaps:", res["gaps"])
                     st.write("✔ Justified Gaps:", res["justified_gaps"])
@@ -348,7 +402,7 @@ elif page == "Candidate Detail":
                     st.info("No education analysis available yet.")
                 db.close()
 
-            # ← CHANGE 2C: New tab8 block — Experience Analysis
+            # Experience Analysis
             with tab8:
                 st.subheader("💼 Experience Profile Analysis")
 
@@ -375,6 +429,26 @@ elif page == "Candidate Detail":
                         col4.metric("Consistency",   round(res["consistency_score"], 2))
 
                         st.divider()
+                        # ── Score radar/bar chart ──
+                        score_data = {
+                            "Score Type": ["Final Score", "Continuity", "Progression", "Consistency"],
+                            "Value": [
+                                round(res["final_score"], 2),
+                                round(res["continuity_score"], 2),
+                                round(res["progression_score"], 2),
+                                round(res["consistency_score"], 2),
+                            ]
+                        }
+                        fig_exp_scores = px.bar(
+                            pd.DataFrame(score_data), x="Score Type", y="Value", text="Value",
+                            color="Score Type",
+                            color_discrete_sequence=["#4C8BF5", "#34A853", "#FBBC04", "#EA4335"],
+                            range_y=[0, 1]
+                        )
+                        fig_exp_scores.update_layout(showlegend=False, margin=dict(t=20, b=20), height=280)
+                        fig_exp_scores.update_traces(texttemplate="%{text:.2f}", textposition="outside")
+                        st.plotly_chart(fig_exp_scores, use_container_width=True)
+
                         st.write("🧠 **Interpretation:**", res["interpretation"])
                         st.write("📈 **Career Trajectory:**", res["trajectory"].capitalize())
                         st.write(
@@ -391,13 +465,28 @@ elif page == "Candidate Detail":
                         roles = prog.get("roles_analyzed", [])
                         if roles:
                             prog_df = pd.DataFrame([{
-                                "Title":        r["title"],
+                                "Title": r["title"],
                                 "Organization": r["organization"],
-                                "Start":        r["start_date"],
-                                "Seniority":    r["tier_label"],
-                                "Tier #":       r["tier"]
+                                "Start": r["start_date"],
+                                "Seniority": r["tier_label"],
+                                "Tier #": r["tier"]
                             } for r in roles])
                             st.dataframe(prog_df, use_container_width=True, hide_index=True)
+
+                            # Seniority tier chart
+                            fig_tier = px.bar(
+                                prog_df.sort_values("Tier #"),
+                                x="Tier #", y="Title", orientation="h",
+                                color="Tier #", text="Seniority",
+                                color_continuous_scale="Blues",
+                                labels={"Title": "Role", "Tier #": "Seniority Tier"}
+                            )
+                            fig_tier.update_layout(
+                                margin=dict(t=20, b=20), height=max(200, len(roles) * 45),
+                                yaxis_title="", coloraxis_showscale=False
+                            )
+                            fig_tier.update_traces(textposition="inside")
+                            st.plotly_chart(fig_tier, use_container_width=True)
                         else:
                             st.info("No role data available for progression chart.")
 
@@ -470,6 +559,52 @@ elif page == "Candidate Detail":
                             )
                         else:
                             st.success("All critical fields are complete — no follow-up needed.")
+
+            with tab9:
+                st.subheader("📄 Conference Paper Analysis")
+                db = SessionLocal()
+                conf_record = db.query(AnalysisCache).filter(
+                    AnalysisCache.candidate_id == selected_id,
+                    AnalysisCache.module == "conference_profile"
+                ).first()
+                db.close()
+
+                if not conf_record:
+                    st.info("No conference analysis available. Re-upload the CV to generate it.")
+                else:
+                    res = json.loads(conf_record.result_json)
+                    if not res.get("has_data"):
+                        st.warning(res.get("message", "No conference papers found."))
+                    else:
+                        summary = res.get("summary", {})
+                        col1, col2, col3 = st.columns(3)
+                        col1.metric("Total Conference Papers", summary.get("total_conference_papers", 0))
+                        col2.metric("A* Venues", summary.get("a_star_count", 0))
+                        col3.metric("First Author Papers", summary.get("first_author_count", 0))
+
+                        st.divider()
+                        st.write("🧠 **Overall Interpretation:**", summary.get("overall_interpretation", "—"))
+
+                        papers = res.get("papers", [])
+                        if papers:
+                            st.divider()
+                            st.subheader("Per-Paper Breakdown")
+                            for p in papers:
+                                tier = p.get("venue_tier", "unknown")
+                                tier_icon = "🏆" if tier == "A*" else "🥈" if tier == "A" else "📄"
+                                maturity = p.get("venue_maturity")
+                                maturity_str = f" (Edition #{maturity})" if maturity else ""
+                                indexing = ", ".join(p.get("indexing", [])) or "Unknown"
+                                st.markdown(
+                                    f"{tier_icon} **{p.get('title', '—')}**\n\n"
+                                    f"Venue: *{p.get('venue', '—')}*{maturity_str} &nbsp;|&nbsp; "
+                                    f"Year: {p.get('year', '—')} &nbsp;|&nbsp; "
+                                    f"Tier: **{tier}** &nbsp;|&nbsp; "
+                                    f"Role: {p.get('authorship_role', '—').replace('_', ' ').title()}\n\n"
+                                    f"Indexed in: {indexing}\n\n"
+                                    f"_{p.get('quality_note', '')}_"
+                                )
+                                st.divider()
 
 
 # PAGE 4: EXPORT DATA

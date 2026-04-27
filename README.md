@@ -1,59 +1,39 @@
-# Talash
+# TALASH – Smart HR Recruitment
 
-Talash is a Streamlit-based application for parsing and analyzing CVs.
+Automated CV analysis system built with Streamlit, Groq (Llama 3), and Claude AI.
 
-## How to Run the App
+## Prerequisites
 
-### 1. Clone the Repository
+- Python 3.9+
+- A Groq API key → https://console.groq.com
+- An Anthropic API key → https://console.anthropic.com
+
+## Setup & Run
+
+**1. Clone the repository**
 ```bash
 git clone https://github.com/abdullahjanjuas/talash.git
 cd talash
 ```
 
-### 2. Create Virtual Environment (Recommended)
-```bash
-python -m venv venv
-```
-
-Activate the environment:
-
-- **macOS/Linux**
-```bash
-source venv/bin/activate
-```
-
-- **Windows**
-```bash
-venv\Scripts\activate
-```
-
-### 3. Install Dependencies
+**2. Install dependencies**
 ```bash
 pip install -r requirements.txt
 ```
 
-### 4. Run the Streamlit App
+**3. Add your API keys**
+
+Modify the `.env.example` file and rename to `.env`:
+
+**4. Run the app**
 ```bash
 streamlit run app.py
 ```
 
-### 5. Open in Browser
-After running, open the URL shown in the terminal (usually):
+The app will open at `http://localhost:8501`.
 
-```
-http://localhost:8501
-```
+## Usage
 
----
-
-## Notes
-- Make sure you have Python 3.9+ installed
-- If you face issues with `fitz` (PyMuPDF), reinstall it:
-  ```bash
-  pip install pymupdf
-  ```
-
----
-
-## Requirements
-All dependencies are listed in `requirements.txt`.
+1. Go to **Upload CV** → upload a PDF → click **Process CV**
+2. View results under **All Candidates** or **Candidate Detail**
+3. Export data as CSV or Excel from **Export Data**
