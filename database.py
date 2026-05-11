@@ -1,30 +1,36 @@
-# This file handles the connection to our SQLite database and actually creates tables in db as defined in models.py.
-# SQLite stores everything in a single file called talash.db
+"""
+database.py
+===========
+SQLAlchemy engine and session management for SQLite.
 
+On Streamlit Community Cloud the filesystem is read-only except for /tmp,
+so we detect writability and fall back to /tmp/talash.db automatically.
+"""
+
+import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from models import Base  # import all our table definitions
+from models import Base
 
-# Path to db
-DATABASE_URL = "sqlite:///./talash.db"
+# Determine a writable location for the SQLite database
+# Streamlit Cloud / Hugging Face Spaces have read-only filesystems
+_DB_DIR = "/tmp" if not os.access(".", os.W_OK) else "."
+DATABASE_URL = f"sqlite:///{_DB_DIR}/talash.db"
 
-# Actual connection to db
-# Using multiple threads for streamlit
 engine = create_engine(
     DATABASE_URL,
-    connect_args={"check_same_thread": False}
+    connect_args={"check_same_thread": False}  # required for Streamlit multi-threading
 )
 
-# SessionLocal is a factory that creates database sessions
 SessionLocal = sessionmaker(
     bind=engine,
-    autocommit=False,  # we control when to commit changes
+    autocommit=False,
     autoflush=False
 )
 
 
 def create_tables():
     """
-    Creates all tables defined in models.py inside talash.db
+    Create all tables defined in models.py (idempotent — safe to call on every start).
     """
     Base.metadata.create_all(bind=engine)
