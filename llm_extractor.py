@@ -1,5 +1,19 @@
-# LLM Used to convert raw text into JSON 
-# llama used from Groq API
+"""
+llm_extractor.py
+=================
+Uses Groq's Llama 3.1 8B model to convert raw CV text into structured JSON.
+The LLM prompt defines a strict JSON schema and extraction rules to ensure
+consistent output across different CV formats.
+
+Pipeline:
+  1. Receive full CV text from parser.py
+  2. Truncate to 12K chars (LLM context window limit)
+  3. Inject text into the EXTRACTION_PROMPT template
+  4. Call Groq API with temperature=0 for deterministic output
+  5. Strip markdown fences if present
+  6. Parse JSON and fill missing keys with safe defaults
+  7. Return success dict with parsed data, or error dict on failure
+"""
 
 from groq import Groq
 import json
@@ -8,12 +22,16 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Client Setup
+# Groq client — reads GROQ_API_KEY from .env
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
+# Fast/cheap model for extraction; 70B model reserved for analysis modules
 MODEL_NAME = "llama-3.1-8b-instant"
 
-# PROMPT 
+# The system-level instruction template.
+# <<<CV_TEXT>>> is replaced with the actual CV text at runtime.
+# The schema defines every field the database expects so LLM output
+# maps directly to models.py tables without post-processing.
 EXTRACTION_PROMPT = """
 You are a highly precise CV/Resume parser.
 
@@ -107,16 +125,24 @@ CV TEXT:
 <<<CV_TEXT>>>
 """
 
-# MAIN FUNCTION
 def extract_cv_data(cv_text: str) -> dict:
+    """
+    Main entry point. Accepts raw CV text, returns structured JSON dict.
 
+    Returns:
+        On success: {"success": True, "data": <parsed dict>}
+        On failure: {"success": False, "error": <msg>, "raw": <raw LLM output>}
+    """
+    # Truncate to 12K characters to fit within the model's context window
     MAX_CHARS = 12000
     if len(cv_text) > MAX_CHARS:
         cv_text = cv_text[:MAX_CHARS]
 
+    # Inject CV text into the extraction prompt template
     prompt = EXTRACTION_PROMPT.replace("<<<CV_TEXT>>>", cv_text)
 
     try:
+        # Call Groq API with temperature=0 for deterministic extraction
         response = client.chat.completions.create(
             model=MODEL_NAME,
             messages=[
@@ -129,16 +155,17 @@ def extract_cv_data(cv_text: str) -> dict:
 
         raw_response = response.choices[0].message.content.strip()
 
-        # CLEAN RESPONSE
+        # Strip accidental markdown code fences that the model sometimes adds
         if raw_response.startswith("```"):
             raw_response = raw_response.split("```")[1]
 
         raw_response = raw_response.strip()
 
-        # PARSE JSON
+        # Parse the cleaned response as JSON
         extracted = json.loads(raw_response)
 
-        # ENSURE KEYS
+        # Fill in any missing top-level keys with safe defaults
+        # This prevents crashes in db_operations if the LLM omits a section
         defaults = {
             "personal": {},
             "education": [],
@@ -150,7 +177,7 @@ def extract_cv_data(cv_text: str) -> dict:
             "books": [],
             "projects": []
         }
-        
+
         for key, default_value in defaults.items():
             if key not in extracted:
                 extracted[key] = default_value
@@ -158,6 +185,7 @@ def extract_cv_data(cv_text: str) -> dict:
         return {"success": True, "data": extracted}
 
     except json.JSONDecodeError:
+        # LLM returned text that isn't valid JSON — return raw output for debugging
         return {
             "success": False,
             "error": "Invalid JSON from model",
@@ -165,13 +193,17 @@ def extract_cv_data(cv_text: str) -> dict:
         }
 
     except Exception as e:
+        # Catch network errors, API timeouts, etc.
         return {
             "success": False,
             "error": str(e)
         }
 
 
-# TEST
+# ---------------------------------------------------------------------------
+# Standalone test — run directly to verify the LLM extraction pipeline
+# Usage:  python llm_extractor.py
+# ---------------------------------------------------------------------------
 if __name__ == "__main__":
     print("Testing Groq + Llama 3...")
 

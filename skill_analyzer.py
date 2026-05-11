@@ -1,16 +1,26 @@
-# skill_analyzer.py
-# Module 3.9: Skill Alignment with Job Roles and Research Publications
-#
-# PIPELINE:
-#   1. Load Skills, Experience, Publications, Projects from DB
-#   2. Call Llama to cross-reference each claimed skill against:
-#      - Job titles + descriptions  (experience evidence)
-#      - Publication titles/venues  (research evidence)
-#      - Project descriptions       (project evidence)
-#   3. Classify each skill as: strongly_evidenced / partially_evidenced /
-#      weakly_evidenced / unsupported
-#   4. If a job description is provided, compute job_relevance_score
-#   5. Return dict → AnalysisCache under module='skill_profile'
+"""
+skill_analyzer.py
+=================
+Module 3.9: Skill Alignment with Job Roles and Research Publications
+
+Pipeline:
+  1. Load Skills, Experience, Publications, Projects from DB
+  2. Call Llama to cross-reference each claimed skill against:
+     - Job titles + descriptions  (experience evidence)
+     - Publication titles/venues  (research evidence)
+     - Project descriptions       (project evidence)
+  3. Classify each skill as: strongly_evidenced / partially_evidenced /
+     weakly_evidenced / unsupported
+  4. If a job description is provided, compute job_relevance_score
+  5. Return dict -> AnalysisCache under module='skill_profile'
+
+Scoring weights:
+  Strongly evidenced:   1.0 per skill
+  Partially evidenced:  0.6 per skill
+  Weakly evidenced:     0.2 per skill
+  Unsupported:          0.0 per skill
+  Final = weighted sum / total skills, capped at 1.0
+"""
 
 import json
 from datetime import datetime
@@ -38,6 +48,14 @@ def _llm_analyze_skills(
 ) -> dict:
     """
     Ask Llama to evaluate each claimed skill against the candidate's evidence.
+
+    The prompt tells the model to return structured JSON with:
+      - evidence_level per skill
+      - evidence_sources (which sections contain proof)
+      - job_relevance (only if a description was provided)
+      - overall summary with counts
+
+    Returns parsed JSON dict, or a safe fallback on failure.
     """
 
     jd_section = (
@@ -114,6 +132,7 @@ Return ONLY this exact JSON — no markdown, no explanation:
         return json.loads(raw.strip())
 
     except Exception as e:
+        # Return a best-effort fallback so the pipeline doesn't crash
         return {
             "skill_assessments": [
                 {"skill": s, "evidence_level": "unknown", "evidence_sources": [],
@@ -139,6 +158,7 @@ Return ONLY this exact JSON — no markdown, no explanation:
 # ---------------------------------------------------------------------------
 
 def _build_experience_summary(experiences) -> str:
+    """Format experience rows into a plain-text summary for the LLM prompt."""
     parts = []
     for e in experiences:
         line = f"- {e.title or 'Unknown role'} at {e.organization or 'Unknown org'}"
@@ -149,6 +169,7 @@ def _build_experience_summary(experiences) -> str:
 
 
 def _build_publication_summary(publications) -> str:
+    """Format publication rows into a plain-text summary."""
     parts = []
     for p in publications:
         parts.append(f"- \"{p.title}\" in {p.venue or 'unknown venue'} ({p.year or '?'})")
@@ -156,6 +177,7 @@ def _build_publication_summary(publications) -> str:
 
 
 def _build_project_summary(projects) -> str:
+    """Format project rows into a plain-text summary."""
     parts = []
     for pr in projects:
         line = f"- {pr.title or 'Unnamed project'}"
@@ -173,9 +195,9 @@ def _build_project_summary(projects) -> str:
 
 def _compute_skill_score(summary: dict) -> float:
     """
-    0–1 credibility score for claimed skills.
+    0-1 credibility score for claimed skills.
 
-    Weights:
+    Weighted formula:
       Strongly evidenced:   1.0 each
       Partially evidenced:  0.6 each
       Weakly evidenced:     0.2 each
@@ -202,8 +224,17 @@ def _compute_skill_score(summary: dict) -> float:
 def analyze_skills(candidate_id: int, job_description: str = "") -> dict:
     """
     Main function called from app.py.
-    job_description: optional free-text job posting for relevance analysis.
-    Stored in AnalysisCache under module='skill_profile'.
+
+    Loads all relevant data from DB, calls the LLM for assessment,
+    computes a credibility score, and returns the full result dict.
+
+    Args:
+        candidate_id: DB id of the candidate to analyze.
+        job_description: optional free-text job posting for relevance analysis.
+
+    Returns:
+        dict with keys: has_data, skill_assessments, summary, skill_score, ...
+        Stored in AnalysisCache under module='skill_profile'.
     """
     db = SessionLocal()
     try:
@@ -238,7 +269,7 @@ def analyze_skills(candidate_id: int, job_description: str = "") -> dict:
     assessments = result.get("skill_assessments", [])
     summary     = result.get("summary", {})
 
-    # Recount from per-skill data
+    # Recount from per-skill data as a consistency check
     summary["total_skills"]                = len(assessments)
     summary["strongly_evidenced_count"]    = sum(1 for s in assessments if s.get("evidence_level") == "strongly_evidenced")
     summary["partially_evidenced_count"]   = sum(1 for s in assessments if s.get("evidence_level") == "partially_evidenced")

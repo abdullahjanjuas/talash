@@ -261,7 +261,7 @@ def generate_candidate_summary(candidate_id: int) -> str:
     # Education
     edu = module_cache.get("education_profile", {})
     if edu:
-        lines.append(f"\n📚 EDUCATION  (score: {sub.get('education', 0):.2f})")
+        lines.append(f"\nEDUCATION  (score: {sub.get('education', 0):.2f})")
         lines.append(f"   University Score: {edu.get('avg_university_score', 0):.2f} | "
                      f"Academic Score: {(edu.get('avg_academic_score') or 0):.2f}")
         lines.append(f"   Progression: {edu.get('progression', '—')} | Gaps: {len(edu.get('gaps', []))}")
@@ -270,7 +270,7 @@ def generate_candidate_summary(candidate_id: int) -> str:
     # Experience
     exp = module_cache.get("experience_profile", {})
     if exp and exp.get("has_data"):
-        lines.append(f"\n💼 EXPERIENCE  (score: {sub.get('experience', 0):.2f})")
+        lines.append(f"\nEXPERIENCE  (score: {sub.get('experience', 0):.2f})")
         lines.append(f"   Total Roles: {exp.get('total_roles', 0)} | "
                      f"Trajectory: {exp.get('trajectory', '—').capitalize()}")
         lines.append(f"   Unexplained Gaps: {exp.get('unexplained_gaps_count', 0)} | "
@@ -281,7 +281,7 @@ def generate_candidate_summary(candidate_id: int) -> str:
     jrn = module_cache.get("journal_profile", {})
     if jrn and jrn.get("has_data"):
         s = jrn.get("summary", {})
-        lines.append(f"\n📰 JOURNALS  (score: {sub.get('journal', 0):.2f})")
+        lines.append(f"\nJOURNALS  (score: {sub.get('journal', 0):.2f})")
         lines.append(f"   Total: {s.get('total_journal_papers', 0)} | "
                      f"WoS: {s.get('wos_count', 0)} | Scopus: {s.get('scopus_count', 0)} | "
                      f"Q1: {s.get('q1_count', 0)}")
@@ -291,7 +291,7 @@ def generate_candidate_summary(candidate_id: int) -> str:
     conf = module_cache.get("conference_profile", {})
     if conf and conf.get("has_data"):
         s = conf.get("summary", {})
-        lines.append(f"\n🎤 CONFERENCES  (score: {sub.get('conference', 0):.2f})")
+        lines.append(f"\nCONFERENCES  (score: {sub.get('conference', 0):.2f})")
         lines.append(f"   Total: {s.get('total_conference_papers', 0)} | "
                      f"A*: {s.get('a_star_count', 0)} | First Author: {s.get('first_author_count', 0)}")
         lines.append(f"   {s.get('overall_interpretation', '—')[:150]}")
@@ -301,7 +301,7 @@ def generate_candidate_summary(candidate_id: int) -> str:
     if tc and tc.get("has_data"):
         ta = tc.get("topic_analysis", {})
         ca = tc.get("coauthor_analysis", {})
-        lines.append(f"\n🔬 RESEARCH DIVERSITY  (score: {sub.get('topic_coauthor', 0):.2f})")
+        lines.append(f"\nRESEARCH DIVERSITY  (score: {sub.get('topic_coauthor', 0):.2f})")
         lines.append(f"   Dominant Topic: {ta.get('dominant_topic', '—')} | "
                      f"Diversity: {ta.get('diversity_label', '—')} ({tc.get('diversity_score', 0):.2f})")
         lines.append(f"   Co-authors: {ca.get('total_unique_coauthors', 0)} unique | "
@@ -311,7 +311,7 @@ def generate_candidate_summary(candidate_id: int) -> str:
     sbp = module_cache.get("supervision_books_patents", {})
     if sbp:
         sup = sbp.get("supervision", {})
-        lines.append(f"\n🎓 SUPERVISION / BOOKS / PATENTS  (score: {sub.get('supervision', 0):.2f})")
+        lines.append(f"\nSUPERVISION / BOOKS / PATENTS  (score: {sub.get('supervision', 0):.2f})")
         lines.append(f"   PhD supervised: {sup.get('phd_main', 0)} | MS supervised: {sup.get('ms_main', 0)}")
         lines.append(f"   Books: {len(sbp.get('books', []))} | Patents: {len(sbp.get('patents', []))}")
         lines.append(f"   {sbp.get('interpretation', '—')}")
@@ -320,7 +320,7 @@ def generate_candidate_summary(candidate_id: int) -> str:
     sk = module_cache.get("skill_profile", {})
     if sk and sk.get("has_data"):
         s = sk.get("summary", {})
-        lines.append(f"\n🛠️ SKILLS  (score: {sub.get('skills', 0):.2f})")
+        lines.append(f"\nSKILLS  (score: {sub.get('skills', 0):.2f})")
         lines.append(f"   Total Skills: {s.get('total_skills', 0)} | "
                      f"Strongly Evidenced: {s.get('strongly_evidenced_count', 0)} | "
                      f"Unsupported: {s.get('unsupported_count', 0)}")

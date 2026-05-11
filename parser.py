@@ -136,14 +136,14 @@ if __name__ == "__main__":
     try:
         result = parse_cv(test_pdf)
 
-        print("\n✅ PARSING SUCCESSFUL\n")
+        print("\nPARSING SUCCESSFUL\n")
 
         print("----- FULL TEXT OUTPUT -----\n")
-        print(result["text"])   # ✅ FULL CV TEXT
+        print(result["text"])   # Full CV text
 
         print("\n----- METADATA -----")
         print(f"Pages: {result['pages']}")
         print(f"Characters: {result['char_count']}")
 
     except Exception as e:
-        print(f"\n❌ ERROR: {str(e)}")
+        print(f"\nERROR: {str(e)}")

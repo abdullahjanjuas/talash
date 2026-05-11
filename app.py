@@ -4,14 +4,16 @@
 # PAGE STRUCTURE:
 #   1. Upload CV          — parse, extract, store, run all analysis modules
 #   2. All Candidates     — summary table + quick charts
-#   3. Candidate Detail   — tabbed deep-dive per candidate
-#        Tab 1: Education        Tab 2: Experience    Tab 3: Projects
-#        Tab 4: Publications     Tab 5: Skills        Tab 6: Patents & Books
-#        Tab 7: Edu Analysis     Tab 8: Exp Analysis  Tab 9: Conference Analysis
-#        Tab 10: Journal Analysis Tab 11: Topic/Coauthor  Tab 12: Supervision/Books/Patents
-#        Tab 13: Skill Analysis
+#   3. Candidate Detail   — tabbed deep-dive per candidate (13 tabs)
+#        Tabs 1-6:  Raw extracted data (Education, Experience, Projects, Publications, Skills, Patents/Books)
+#        Tabs 7-13: Analysis module results (Edu, Exp, Conference, Journal, Topic/Coauthor, Supervision, Skills)
 #   4. Rankings Dashboard  — comparative ranked view with charts
 #   5. Export Data         — CSV / Excel download
+#
+# ARCHITECTURE:
+#   - Each analysis module is an independent function in its own .py file.
+#   - Results are cached in the analysis_cache table to avoid re-running LLM calls.
+#   - The sidebar controls navigation; st.session_state is not used (re-run on every interaction).
 
 import streamlit as st
 import os
@@ -40,10 +42,12 @@ from skill_analyzer import analyze_skills
 from candidate_ranker import rank_all_candidates, generate_candidate_summary, compute_candidate_score
 
 # ── Page config ───────────────────────────────────────────────────────────────
-st.set_page_config(page_title="TALASH", layout="wide", page_icon="🔍")
+st.set_page_config(page_title="TALASH", layout="wide", page_icon=None)
 
 # ── Init ──────────────────────────────────────────────────────────────────────
+# Create DB tables if they don't exist (safe to call on every run)
 create_tables()
+# Ensure storage directories exist
 os.makedirs("cvs", exist_ok=True)
 os.makedirs("outputs", exist_ok=True)
 
@@ -53,6 +57,7 @@ st.sidebar.title("TALASH")
 st.sidebar.markdown("*Smart HR Recruitment System*")
 st.sidebar.divider()
 
+# Page router — selected page drives which UI block renders below
 page = st.sidebar.radio(
     "Navigation",
     ["Upload CV", "All Candidates", "Candidate Detail", "Rankings Dashboard", "Export Data"]
@@ -63,56 +68,66 @@ page = st.sidebar.radio(
 # HELPER: run all analysis modules for a candidate
 # =============================================================================
 def run_all_analyses(candidate_id: int):
-    """Run every analysis module and cache results. Returns dict of results."""
+    """
+    Run every analysis module sequentially and cache each result.
+
+    Each module follows the same pattern:
+      1. Call the module's analyze_* function (which queries the DB directly)
+      2. Store result in analysis_cache via store_analysis_cache()
+      3. Add result to the results dict
+
+    Uses st.spinner() to show progress in the UI.
+    Results dict keys match the module names used in AnalysisCache.module.
+    """
     results = {}
 
     with st.spinner("Analyzing educational profile..."):
         r = analyze_education(candidate_id)
         store_analysis_cache(candidate_id, "education_profile", r)
         results["education_profile"] = r
-    st.success("✅ Education analysis complete")
+    st.success("Education analysis complete")
 
     with st.spinner("Analyzing professional experience..."):
         r = analyze_experience(candidate_id)
         store_analysis_cache(candidate_id, "experience_profile", r)
         results["experience_profile"] = r
-    st.success("✅ Experience analysis complete")
+    st.success("Experience analysis complete")
 
     with st.spinner("Analyzing conference publications..."):
         r = analyze_conference_papers(candidate_id)
         store_analysis_cache(candidate_id, "conference_profile", r)
         results["conference_profile"] = r
-    st.success("✅ Conference analysis complete")
+    st.success("Conference analysis complete")
 
     with st.spinner("Analyzing journal publications..."):
         r = analyze_journal_papers(candidate_id)
         store_analysis_cache(candidate_id, "journal_profile", r)
         results["journal_profile"] = r
-    st.success("✅ Journal analysis complete")
+    st.success("Journal analysis complete")
 
     with st.spinner("Analyzing research topics and co-authors..."):
         r = analyze_topics_and_coauthors(candidate_id)
         store_analysis_cache(candidate_id, "topic_coauthor_profile", r)
         results["topic_coauthor_profile"] = r
-    st.success("✅ Topic & co-author analysis complete")
+    st.success("Topic & co-author analysis complete")
 
     with st.spinner("Analyzing supervision, books, and patents..."):
         r = analyze_supervision_books_patents(candidate_id)
         store_analysis_cache(candidate_id, "supervision_books_patents", r)
         results["supervision_books_patents"] = r
-    st.success("✅ Supervision/books/patents analysis complete")
+    st.success("Supervision/books/patents analysis complete")
 
     with st.spinner("Analyzing skill alignment..."):
         r = analyze_skills(candidate_id)
         store_analysis_cache(candidate_id, "skill_profile", r)
         results["skill_profile"] = r
-    st.success("✅ Skill analysis complete")
+    st.success("Skill analysis complete")
 
     return results
 
 
 def _load_cache(candidate_id: int, module: str):
-    """Load a single analysis result from cache. Returns dict or None."""
+    """Load a single analysis result from cache. Returns parsed dict or None if not cached."""
     db = SessionLocal()
     try:
         rec = db.query(AnalysisCache).filter(
@@ -128,7 +143,7 @@ def _load_cache(candidate_id: int, module: str):
 # PAGE 1: UPLOAD CV
 # =============================================================================
 if page == "Upload CV":
-    st.title("🔍 TALASH: Upload & Process CV")
+    st.title("TALASH: Upload and Process CV")
     st.info("Upload a PDF CV. The system will extract all data and run the full analysis pipeline.")
 
     uploaded_file = st.file_uploader("Choose a PDF file", type=["pdf"])
@@ -138,14 +153,14 @@ if page == "Upload CV":
 
         if st.button("Process CV", type="primary"):
 
-            # Step 1: Save PDF
+            # Step 1: Save PDF to local filesystem for processing
             with st.spinner("Step 1/4: Saving PDF..."):
                 pdf_path = f"cvs/{uploaded_file.name}"
                 with open(pdf_path, "wb") as f:
                     f.write(uploaded_file.getbuffer())
             st.success(f"Step 1 done: saved to {pdf_path}")
 
-            # Step 2: Parse
+            # Step 2: Parse PDF into raw text using PyMuPDF + pdfplumber
             with st.spinner("Step 2/4: Extracting text from PDF..."):
                 parse_result = parse_cv(pdf_path)
                 cv_text      = parse_result["text"]
@@ -155,7 +170,7 @@ if page == "Upload CV":
             with st.expander("View extracted text (debug)"):
                 st.text(cv_text[:3000] + ("..." if len(cv_text) > 3000 else ""))
 
-            # Step 3: LLM extraction
+            # Step 3: Send raw text to LLM for structured JSON extraction
             with st.spinner("Step 3/4: AI extracting structured data..."):
                 result = extract_cv_data(cv_text)
 
@@ -169,7 +184,7 @@ if page == "Upload CV":
             with st.expander("View extracted JSON (debug)"):
                 st.json(extracted)
 
-            # Step 4: Store + Analyze
+            # Step 4: Store structured data in DB, then run all analysis modules
             with st.spinner("Step 4/4: Storing in database..."):
                 try:
                     candidate_id = store_candidate(extracted, uploaded_file.name)
@@ -179,7 +194,7 @@ if page == "Upload CV":
 
             st.success(f"Stored as Candidate #{candidate_id}")
 
-            # Run all analyses
+            # Run all analysis modules sequentially (each caches its own result)
             st.divider()
             st.subheader("Running Full Analysis Pipeline...")
             run_all_analyses(candidate_id)
@@ -187,7 +202,7 @@ if page == "Upload CV":
             st.balloons()
             st.divider()
 
-            # Extraction summary
+            # Display extraction summary with record counts
             st.subheader("Extraction Summary")
             personal = extracted.get("personal", {})
             col1, col2, col3, col4 = st.columns(4)
@@ -246,7 +261,12 @@ if page == "Upload CV":
 # PAGE 2: ALL CANDIDATES
 # =============================================================================
 elif page == "All Candidates":
-    st.title("👥 All Candidates")
+    """
+    Shows a summary table of all candidates with quick stats and charts.
+    Data comes from get_all_candidates_summary() which aggregates across
+    all related tables (education, experience, publications, skills).
+    """
+    st.title("All Candidates")
 
     candidates = get_all_candidates_summary()
 
@@ -255,6 +275,7 @@ elif page == "All Candidates":
     else:
         st.info(f"**{len(candidates)}** candidate(s) in the database")
 
+        # Main summary table — one row per candidate
         df = pd.DataFrame(candidates)
         st.dataframe(df, use_container_width=True, hide_index=True)
 
@@ -304,7 +325,12 @@ elif page == "All Candidates":
 # PAGE 3: CANDIDATE DETAIL
 # =============================================================================
 elif page == "Candidate Detail":
-    st.title("📋 Candidate Detail")
+    """
+    Deep-dive view for a single candidate with 13 tabs:
+      Tabs 1-6: Raw data (Education, Experience, Projects, Publications, Skills, Patents/Books)
+      Tabs 7-13: Analysis results from each module (loaded from cache)
+    """
+    st.title("Candidate Detail")
 
     candidates = get_all_candidates_summary()
     if not candidates:
@@ -321,14 +347,14 @@ elif page == "Candidate Detail":
             detail = get_candidate_detail(selected_id)
             c = detail["candidate"]
 
-            st.subheader(f"👤 {c.name}")
+            st.subheader(f"Candidate: {c.name}")
             col1, col2 = st.columns(2)
             col1.markdown(f"**Email:** {c.email or '—'}")
             col1.markdown(f"**Phone:** {c.phone or '—'}")
             col2.markdown(f"**Address:** {c.address or '—'}")
             col2.markdown(f"**CV File:** {c.cv_filename or '—'}")
 
-            # Score badge
+            # Score badge with color coding based on performance tier
             score_data = compute_candidate_score(selected_id)
             pct = score_data["total_score_pct"]
             color = "#2ecc71" if pct >= 75 else "#f39c12" if pct >= 55 else "#e74c3c"
@@ -339,21 +365,22 @@ elif page == "Candidate Detail":
                 unsafe_allow_html=True
             )
 
-            # Re-run option
-            if st.button("🔄 Re-run All Analyses"):
+            # Re-run option — useful after modifying data or LLM prompts
+            if st.button("Re-run All Analyses"):
                 run_all_analyses(selected_id)
                 st.rerun()
 
             st.divider()
 
             # --- 13 Tabs ---
+            # First 6 tabs show raw extracted data, last 7 show analysis results
             (tab1, tab2, tab3, tab4, tab5, tab6,
              tab7, tab8, tab9, tab10, tab11, tab12, tab13) = st.tabs([
                 "Education", "Experience", "Projects", "Publications",
                 "Skills", "Patents & Books",
-                "📊 Edu Analysis", "💼 Exp Analysis", "🎤 Conference",
-                "📰 Journals", "🔬 Topics/Coauthors", "🎓 Supervision",
-                "🛠️ Skill Analysis"
+                "Edu Analysis", "Exp Analysis", "Conference",
+                "Journals", "Topics/Coauthors", "Supervision",
+                "Skill Analysis"
             ])
 
             # TAB 1: Education
@@ -440,9 +467,9 @@ elif page == "Candidate Detail":
                 if not detail["patents"] and not detail["books"]:
                     st.info("No patents or books.")
 
-            # TAB 7: Education Analysis
+            # TAB 7: Education Analysis — degree quality, institution ranking, progression
             with tab7:
-                st.subheader("🎓 Education Profile Analysis")
+                st.subheader("Education Profile Analysis")
                 res = _load_cache(selected_id, "education_profile")
                 if res:
                     c1, c2, c3 = st.columns(3)
@@ -461,17 +488,17 @@ elif page == "Candidate Detail":
                     fig.update_traces(texttemplate="%{text:.2f}", textposition="outside")
                     st.plotly_chart(fig, use_container_width=True)
 
-                    st.write("📈 Progression:", res["progression"])
-                    st.write("⏳ Gaps:", res["gaps"])
-                    st.write("✔ Justified Gaps:", res["justified_gaps"])
-                    st.write("🧠 Interpretation:", res["interpretation"])
+                    st.write("Progression:", res["progression"])
+                    st.write("Gaps:", res["gaps"])
+                    st.write("Justified Gaps:", res["justified_gaps"])
+                    st.write("Interpretation:", res["interpretation"])
                     st.write(f"**Final Score:** {res.get('final_score', '—')}")
                 else:
                     st.info("No education analysis cached. Upload or re-run.")
 
-            # TAB 8: Experience Analysis
+            # TAB 8: Experience Analysis — gaps, overlaps, career trajectory
             with tab8:
-                st.subheader("💼 Experience Profile Analysis")
+                st.subheader("Experience Profile Analysis")
                 res = _load_cache(selected_id, "experience_profile")
                 if not res:
                     st.info("No experience analysis cached.")
@@ -496,8 +523,8 @@ elif page == "Candidate Detail":
                     fig.update_traces(texttemplate="%{text:.2f}", textposition="outside")
                     st.plotly_chart(fig, use_container_width=True)
 
-                    st.write("🧠 **Interpretation:**", res["interpretation"])
-                    st.write("📈 **Career Trajectory:**", res["trajectory"].capitalize())
+                    st.write("**Interpretation:**", res["interpretation"])
+                    st.write("**Career Trajectory:**", res["trajectory"].capitalize())
                     st.write(f"Roles: **{res['total_roles']}** | Unexplained Gaps: **{res['unexplained_gaps_count']}** | Suspicious Overlaps: **{res['suspicious_overlaps_count']}**")
 
                     # Career Progression table
@@ -518,7 +545,7 @@ elif page == "Candidate Detail":
                         st.divider()
                         st.subheader("Professional Gaps")
                         for g in gaps:
-                            icon = "✅" if g["justified"] else "⚠️"
+                            icon = "[OK]" if g["justified"] else "[!]"
                             st.markdown(f"{icon} **{g['description']}** — *{g['justification']}*")
 
                     # Overlaps
@@ -527,8 +554,8 @@ elif page == "Candidate Detail":
                         st.divider()
                         st.subheader("Experience Overlaps")
                         for o in overlaps:
-                            icon = "🔴" if o["suspicion"] == "high" else "🟡"
-                            st.markdown(f"{icon} **{o['job_a']}** @ {o['org_a']} ↔ **{o['job_b']}** @ {o['org_b']} — {o['note']}")
+                            icon = "[HIGH]" if o["suspicion"] == "high" else "[LOW]"
+                            st.markdown(f"{icon} **{o['job_a']}** @ {o['org_a']} <-> **{o['job_b']}** @ {o['org_b']} — {o['note']}")
 
                     # Missing info + email
                     missing = res.get("missing_info", {})
@@ -540,13 +567,13 @@ elif page == "Candidate Detail":
                         for f in missing["missing_fields"]:
                             st.markdown(f"  • {f}")
                         if missing.get("email_draft"):
-                            st.subheader("📧 Auto-Generated Follow-Up Email")
+                            st.subheader("Auto-Generated Follow-Up Email")
                             st.text_area("Email Draft", value=missing["email_draft"], height=300,
                                          label_visibility="collapsed")
 
             # TAB 9: Conference Analysis
             with tab9:
-                st.subheader("🎤 Conference Paper Analysis")
+                st.subheader("Conference Paper Analysis")
                 res = _load_cache(selected_id, "conference_profile")
                 if not res:
                     st.info("No conference analysis cached.")
@@ -560,7 +587,7 @@ elif page == "Candidate Detail":
                     c3.metric("First Author",    s.get("first_author_count", 0))
                     c4.metric("Conference Score", round(res.get("conference_score", 0), 2))
 
-                    st.write("🧠 **Overall Interpretation:**", s.get("overall_interpretation", "—"))
+                    st.write("**Overall Interpretation:**", s.get("overall_interpretation", "—"))
 
                     papers = res.get("papers", [])
                     if papers:
@@ -578,7 +605,7 @@ elif page == "Candidate Detail":
                         st.subheader("Per-Paper Breakdown")
                         for p in papers:
                             tier = p.get("venue_tier", "unknown")
-                            icon = "🏆" if tier == "A*" else "🥈" if tier == "A" else "📄"
+                            icon = "[A*]" if tier == "A*" else "[A]" if tier == "A" else "[Paper]"
                             maturity = p.get("venue_maturity")
                             mat_str  = f" (Edition #{maturity})" if maturity else ""
                             indexing = ", ".join(p.get("indexing", [])) or "Unknown"
@@ -593,7 +620,7 @@ elif page == "Candidate Detail":
 
             # TAB 10: Journal Analysis
             with tab10:
-                st.subheader("📰 Journal Paper Analysis")
+                st.subheader("Journal Paper Analysis")
                 res = _load_cache(selected_id, "journal_profile")
                 if not res:
                     st.info("No journal analysis cached.")
@@ -608,7 +635,7 @@ elif page == "Candidate Detail":
                     c4.metric("Q1 Papers",       s.get("q1_count", 0))
                     c5.metric("Journal Score",   round(res.get("journal_score", 0), 2))
 
-                    st.write("🧠 **Overall Interpretation:**", s.get("overall_interpretation", "—"))
+                    st.write("**Overall Interpretation:**", s.get("overall_interpretation", "—"))
 
                     papers = res.get("papers", [])
                     if papers:
@@ -629,9 +656,9 @@ elif page == "Candidate Detail":
                         st.subheader("Per-Paper Breakdown")
                         for p in papers:
                             quartile = p.get("quartile", "unknown")
-                            q_color  = {"Q1": "🟢", "Q2": "🟡", "Q3": "🟠", "Q4": "🔴"}.get(quartile, "⚪")
-                            wos  = "✅ WoS" if p.get("wos_indexed") else "❌ WoS"
-                            scop = "✅ Scopus" if p.get("scopus_indexed") else "❌ Scopus"
+                            q_color  = {"Q1": "[Q1]", "Q2": "[Q2]", "Q3": "[Q3]", "Q4": "[Q4]"}.get(quartile, "[?]")
+                            wos  = "[WoS]" if p.get("wos_indexed") else "[No WoS]"
+                            scop = "[Scopus]" if p.get("scopus_indexed") else "[No Scopus]"
                             conf_str = f"Confidence: {p.get('confidence','?')}"
                             st.markdown(
                                 f"{q_color} **{p.get('title','—')}**\n\n"
@@ -645,7 +672,7 @@ elif page == "Candidate Detail":
 
             # TAB 11: Topic Variability + Co-author Analysis
             with tab11:
-                st.subheader("🔬 Research Topics & Co-Author Analysis")
+                st.subheader("Research Topics and Co-Author Analysis")
                 res = _load_cache(selected_id, "topic_coauthor_profile")
                 if not res:
                     st.info("No topic/co-author analysis cached.")
@@ -707,7 +734,7 @@ elif page == "Candidate Detail":
 
             # TAB 12: Supervision / Books / Patents
             with tab12:
-                st.subheader("🎓 Supervision, Books & Patents")
+                st.subheader("Supervision, Books and Patents")
                 res = _load_cache(selected_id, "supervision_books_patents")
                 if not res:
                     st.info("No supervision/books/patents analysis cached.")
@@ -739,7 +766,7 @@ elif page == "Candidate Detail":
                         st.subheader("Books")
                         st.write(res.get("book_overall_note", ""))
                         for b in books:
-                            tier_icon = "🟢" if b.get("publisher_tier") == "Top-tier" else "🟡" if b.get("publisher_tier") == "Mid-tier" else "⚪"
+                            tier_icon = "[Top]" if b.get("publisher_tier") == "Top-tier" else "[Mid]" if b.get("publisher_tier") == "Mid-tier" else "[?]"
                             st.markdown(
                                 f"{tier_icon} **{b.get('title','—')}** — *{b.get('publisher','—')}* "
                                 f"({b.get('year','—')}) | Role: {b.get('role','—')} | "
@@ -757,10 +784,10 @@ elif page == "Candidate Detail":
 
             # TAB 13: Skill Analysis
             with tab13:
-                st.subheader("🛠️ Skill Alignment Analysis")
+                st.subheader("Skill Alignment Analysis")
 
                 # Optional job description input
-                with st.expander("📝 Optional: Provide a Job Description for Relevance Analysis"):
+                with st.expander("Optional: Provide a Job Description for Relevance Analysis"):
                     jd_input = st.text_area(
                         "Paste the target job description here (leave blank to skip)",
                         height=150,
@@ -787,7 +814,7 @@ elif page == "Candidate Detail":
                     c4.metric("Unsupported",              s.get("unsupported_count", 0))
                     st.metric("Skill Credibility Score",  round(res.get("skill_score", 0), 2))
 
-                    st.write("🧠 **Interpretation:**", s.get("overall_interpretation", "—"))
+                    st.write("**Interpretation:**", s.get("overall_interpretation", "—"))
 
                     # Evidence level donut chart
                     ev_data = {
@@ -814,15 +841,15 @@ elif page == "Candidate Detail":
                     assessments = res.get("skill_assessments", [])
                     if assessments:
                         icon_map = {
-                            "strongly_evidenced":  "🟢",
-                            "partially_evidenced": "🟡",
-                            "weakly_evidenced":    "🟠",
-                            "unsupported":         "🔴",
-                            "unknown":             "⚪"
+                            "strongly_evidenced":  "[STRONG]",
+                            "partially_evidenced": "[PARTIAL]",
+                            "weakly_evidenced":    "[WEAK]",
+                            "unsupported":         "[NONE]",
+                            "unknown":             "[?]"
                         }
                         for a in assessments:
                             ev = a.get("evidence_level", "unknown")
-                            icon = icon_map.get(ev, "⚪")
+                            icon = icon_map.get(ev, "[?]")
                             src  = ", ".join(a.get("evidence_sources", [])) or "none"
                             rel  = a.get("job_relevance", "not_assessed")
                             st.markdown(
@@ -833,12 +860,12 @@ elif page == "Candidate Detail":
                         st.divider()
 
                     # Candidate Summary (full text)
-                    st.subheader("📄 Full Candidate Summary Report")
+                    st.subheader("Full Candidate Summary Report")
                     summary_text = generate_candidate_summary(selected_id)
                     st.text_area("Summary", value=summary_text, height=450,
                                  label_visibility="collapsed")
                     st.download_button(
-                        "📥 Download Summary",
+                        "Download Summary",
                         data=summary_text.encode(),
                         file_name=f"talash_summary_candidate_{selected_id}.txt",
                         mime="text/plain"
@@ -849,7 +876,16 @@ elif page == "Candidate Detail":
 # PAGE 4: RANKINGS DASHBOARD
 # =============================================================================
 elif page == "Rankings Dashboard":
-    st.title("🏆 Candidate Rankings Dashboard")
+    """
+    Comparative view ranking all candidates by weighted total score.
+    Shows a color-coded table, bar chart, radar comparison (top 5),
+    and suitability distribution pie chart.
+
+    Ranking formula defined in candidate_ranker.py:
+      - Education 15%, Journal 12%, Conference 8%, Topic/Coauthor 10%
+      - Supervision 8%, Experience 30%, Skills 17%
+    """
+    st.title("Candidate Rankings Dashboard")
     st.info("Candidates are ranked by a weighted score across all analysis modules.")
 
     ranked = rank_all_candidates()
@@ -946,12 +982,12 @@ elif page == "Rankings Dashboard":
 
         # Generate summary for top candidate
         st.divider()
-        st.subheader("📄 Top Candidate Summary Report")
+        st.subheader("Top Candidate Summary Report")
         top = ranked[0]
         summary_text = generate_candidate_summary(top["candidate_id"])
         st.text_area("", value=summary_text, height=400, label_visibility="collapsed")
         st.download_button(
-            f"📥 Download Top Candidate Summary",
+            "Download Top Candidate Summary",
             data=summary_text.encode(),
             file_name=f"talash_top_candidate_{top['name'].replace(' ','_')}.txt",
             mime="text/plain"
@@ -962,7 +998,11 @@ elif page == "Rankings Dashboard":
 # PAGE 5: EXPORT DATA
 # =============================================================================
 elif page == "Export Data":
-    st.title("📤 Export Candidate Data")
+    """
+    Export all candidate data as CSV or Excel.
+    Also supports generating a text file with all candidate summaries.
+    """
+    st.title("Export Candidate Data")
 
     candidates = get_all_candidates_summary()
     if not candidates:
@@ -1002,7 +1042,7 @@ elif page == "Export Data":
                 all_summaries.append("\n\n" + "━" * 60 + "\n\n")
             combined = "\n".join(all_summaries)
             st.download_button(
-                "📥 Download All Summaries",
+                "Download All Summaries",
                 data=combined.encode(),
                 file_name="talash_all_summaries.txt",
                 mime="text/plain"
