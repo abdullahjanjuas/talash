@@ -142,8 +142,7 @@ def extract_cv_data(cv_text: str) -> dict:
     prompt = EXTRACTION_PROMPT.replace("<<<CV_TEXT>>>", cv_text)
 
     try:
-        # Call Groq API with temperature=0 for deterministic extraction
-            response = client.chat.completions.create(
+        response = client.chat.completions.create(
             model=MODEL_NAME,
             messages=[
                 {"role": "system", "content": "You are a JSON-only output machine. You must return only raw valid JSON with no explanation, no markdown, no backticks, no preamble, no postamble. Just the JSON object."},
@@ -156,17 +155,13 @@ def extract_cv_data(cv_text: str) -> dict:
 
         raw_response = response.choices[0].message.content.strip()
 
-        # Strip accidental markdown code fences that the model sometimes adds
         if raw_response.startswith("```"):
             raw_response = raw_response.split("```")[1]
 
         raw_response = raw_response.strip()
 
-        # Parse the cleaned response as JSON
         extracted = json.loads(raw_response)
 
-        # Fill in any missing top-level keys with safe defaults
-        # This prevents crashes in db_operations if the LLM omits a section
         defaults = {
             "personal": {},
             "education": [],
@@ -186,7 +181,6 @@ def extract_cv_data(cv_text: str) -> dict:
         return {"success": True, "data": extracted}
 
     except json.JSONDecodeError:
-        # LLM returned text that isn't valid JSON — return raw output for debugging
         return {
             "success": False,
             "error": "Invalid JSON from model",
@@ -194,12 +188,10 @@ def extract_cv_data(cv_text: str) -> dict:
         }
 
     except Exception as e:
-        # Catch network errors, API timeouts, etc.
         return {
             "success": False,
             "error": str(e)
         }
-
 
 # ---------------------------------------------------------------------------
 # Standalone test — run directly to verify the LLM extraction pipeline
