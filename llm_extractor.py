@@ -26,7 +26,7 @@ load_dotenv()
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 # Fast/cheap model for extraction; 70B model reserved for analysis modules
-MODEL_NAME = "MODEL_NAME = "llama-3.3-70b-versatile""
+MODEL_NAME = "llama-3.3-70b-versatile""
 
 # The system-level instruction template.
 # <<<CV_TEXT>>> is replaced with the actual CV text at runtime.
