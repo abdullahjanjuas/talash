@@ -143,14 +143,15 @@ def extract_cv_data(cv_text: str) -> dict:
 
     try:
         # Call Groq API with temperature=0 for deterministic extraction
-        response = client.chat.completions.create(
+            response = client.chat.completions.create(
             model=MODEL_NAME,
             messages=[
-                {"role": "system", "content": "You output only valid JSON."},
+                {"role": "system", "content": "You are a JSON-only output machine. You must return only raw valid JSON with no explanation, no markdown, no backticks, no preamble, no postamble. Just the JSON object."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0,
-            max_tokens=3000
+            max_tokens=4000,
+            response_format={"type": "json_object"}
         )
 
         raw_response = response.choices[0].message.content.strip()
